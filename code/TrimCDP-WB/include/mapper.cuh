@@ -245,68 +245,92 @@ public:
 		}
 	}
 	__forceinline__ __device__ void
-	mapper_push(		 
-		vertex_t wqueue, // 这个是本轮的用值
-		vertex_t *worklist,
-		index_t *cat_thd_count, // 这个是本轮返回值
-		const index_t GRP_ID,
-		const index_t GRP_SZ,
-		const index_t GRP_COUNT,
-		const index_t THD_OFF,
-		feature_t level,
-		volatile vertex_t *bests,
-		feature_t *records)
+	mapper_push(vertex_t wqueue,
+			   vertex_t *worklist,
+			   index_t *cat_thd_count,
+			   const index_t GRP_ID,
+			   const index_t GRP_SZ,
+			   const index_t GRP_COUNT,
+			   const index_t THD_OFF,
+			   feature_t level,
+			   volatile vertex_t *bests,
+			   feature_t *records)
 	{
+		// 使用 shared memory 缓存频繁访问的数据
+		__shared__ feature_t shared_vert_status[THREAD_PER_BLOCK];
+		__shared__ feature_t shared_worklist[THREAD_PER_BLOCK];
+		
+		const vertex_t WSZ = wqueue;
 		index_t appr_work = 0;
 		weight_t weight;
-		const vertex_t WSZ = wqueue;
-		for (index_t i = GRP_ID; i < WSZ; i += GRP_COUNT)
-		{
-
-			vertex_t frontier = worklist[i];
-
-			int v = frontier / width, p = frontier % width;
-			index_t beg = beg_pos[v], end = beg_pos[v + 1], x_slash = full - p, vline = v * width;
-
-			for (index_t j = beg + THD_OFF; j < end; j += GRP_SZ)
-			{
-
+		
+		// 预取当前 best 值到寄存器，减少全局内存访问
+		feature_t current_best = *bests;
+		
+		for (index_t i = GRP_ID; i < WSZ; i += GRP_COUNT) {
+			// 加载当前工作项到 shared memory
+			if (threadIdx.x < THREAD_PER_BLOCK) {
+				shared_worklist[threadIdx.x] = worklist[i + threadIdx.x];
+			}
+			__syncthreads();
+			
+			vertex_t frontier = shared_worklist[threadIdx.x % THREAD_PER_BLOCK];
+			int v = frontier / width;
+			int p = frontier % width;
+			index_t vline = v * width;
+			
+			// 缓存当前顶点的状态到 shared memory
+			if (threadIdx.x < width) {
+				shared_vert_status[threadIdx.x] = vert_status[vline + threadIdx.x];
+			}
+			__syncthreads();
+			
+			// 使用寄存器存储当前顶点的状态，减少 shared memory 访问
+			feature_t current_vert_status = shared_vert_status[p];
+			
+			// 处理邻接边
+			index_t beg = beg_pos[v];
+			index_t end = beg_pos[v + 1];
+			index_t x_slash = full - p;
+			
+			for (index_t j = beg + THD_OFF; j < end; j += GRP_SZ) {
 				vertex_t vert_end = adj_list[j];
 				weight = weight_list[j];
 				vertex_t update_dest = vert_end * width + p;
-				feature_t dist = vert_status[frontier] + weight;
-
-			
-				if (vert_status[update_dest] > dist)
-				{
+				feature_t dist = current_vert_status + weight;
+				
+				if (vert_status[update_dest] > dist) {
 					int lb = get_lb(one_label_lower_bound, lb0, vert_end * width, x_slash);
 					atomicMin(vert_status + update_dest, dist);
-					if (lb + dist <= (*best))
+					if (lb + dist <= current_best) {
 						merge_or_grow[update_dest] = 1;
+					}
 				}
 			}
-
-			// merge
-			beg = merge_pointer[p], end = merge_pointer[p + 1];
 			
-			for (index_t j = beg + THD_OFF; j < end; j += GRP_SZ)
-			{
-				weight_t weight = vert_status[vline + merge_groups[j]];
+			// 处理 merge 操作
+			beg = merge_pointer[p];
+			end = merge_pointer[p + 1];
+			
+			for (index_t j = beg + THD_OFF; j < end; j += GRP_SZ) {
+				weight_t weight = shared_vert_status[merge_groups[j]];
 				vertex_t update_dest = frontier + merge_groups[j];
-
-				feature_t dist = vert_status[frontier] + weight;
+				feature_t dist = current_vert_status + weight;
 				x_slash = full - p - merge_groups[j];
-				if (vert_status[update_dest] > dist)
-				{
+				
+				if (vert_status[update_dest] > dist) {
 					atomicMin(vert_status + update_dest, dist);
 					int lb = get_lb_m(one_label_lower_bound, lb0, vline, x_slash, dist);
-					if (lb + dist <= (*best))
+					if (lb + dist <= current_best) {
 						merge_or_grow[update_dest] = 1;
+					}
 				}
 			}
+			
+			__syncthreads();
+			appr_work++;
 		}
-
-
+		
 		cat_thd_count[threadIdx.x + blockIdx.x * blockDim.x] = appr_work;
 	}
 

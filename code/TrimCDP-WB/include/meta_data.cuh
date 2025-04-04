@@ -66,6 +66,10 @@ public:
 	/*stream*/
 	cudaStream_t *stream;
 
+	// 添加 texture 对象
+	texture<feature_t, 1, cudaReadModeElementType> tex_vert_status;
+	texture<feature_t, 1, cudaReadModeElementType> tex_one_label;
+
 public:
 	~meta_data() {}
 	meta_data(
@@ -157,6 +161,11 @@ public:
 		H_ERR(cudaMallocHost((void **)&lrg_count_chk, CATE_SZ));
 
 		H_ERR(cudaMalloc((void **)&future_work, sizeof(index_t)));
+
+		// 绑定 texture
+		cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<feature_t>();
+		cudaBindTexture(NULL, &tex_vert_status, vert_status, &channelDesc, FEAT_SZ * width);
+		cudaBindTexture(NULL, &tex_one_label, record, &channelDesc, FEAT_SZ * width);
 	}
 	void release()
 	{
@@ -173,6 +182,30 @@ public:
 		cudaFree(record);
 		cudaFree(lb_record);
 		cudaFree(merge_or_grow);
+		cudaFree(bitmap);
+		cudaFree(max_queue_size);
+		cudaFree(worklist_sz_sml);
+		cudaFree(worklist_sz_mid);
+		cudaFree(worklist_sz_lrg);
+		cudaFree(new_worklist_sz_sml);
+		cudaFree(new_worklist_sz_mid);
+		cudaFree(new_worklist_sz_lrg);
+		cudaFree(best);
+		cudaFree(future_work);
+		cudaFree(cat_thd_count_sml);
+		cudaFree(cat_thd_count_mid);
+		cudaFree(cat_thd_count_lrg);
+		cudaFree(cat_thd_off_sml);
+		cudaFree(cat_thd_off_mid);
+		cudaFree(cat_thd_off_lrg);
+		cudaFree(scan_temp_sml);
+		cudaFree(scan_temp_mid);
+		cudaFree(scan_temp_lrg);
+		cudaFree(cat_thd_count_h);
+		cudaFree(cat_thd_off_h);
+		free(stream);
+		cudaUnbindTexture(&tex_vert_status);
+		cudaUnbindTexture(&tex_one_label);
 	}
 };
 

@@ -158,6 +158,38 @@ __device__ cb_mapper vert_behave_push_d = user_mapper_push;
 __device__ cb_mapper vert_behave_pull_d = user_mapper_pull;
 __device__ best_reducer vertex_selector_best_push_d = vertex_selector_best_push;
 
+__forceinline__ __device__ void
+mapper_push(vertex_t wqueue,
+           vertex_t *worklist,
+           index_t *cat_thd_count,
+           const index_t GRP_ID,
+           const index_t GRP_SZ,
+           const index_t GRP_COUNT,
+           const index_t THD_OFF,
+           feature_t level,
+           volatile vertex_t *bests,
+           feature_t *records)
+{
+    // ... 现有的代码 ...
+    
+    // 在处理完顶点后，将新生成的顶点分配到桶中
+    if (vert_status[update_dest] > dist) {
+        atomicMin(vert_status + update_dest, dist);
+        
+        // 根据新的距离将顶点分配到桶中
+        int bucket_idx = 0;
+        while (bucket_idx < NUM_BUCKETS && dist >= bucket_ranges[bucket_idx]) {
+            bucket_idx++;
+        }
+        if (bucket_idx < NUM_BUCKETS) {
+            int pos = atomicAdd(bucket_sizes[bucket_idx], 1);
+            buckets[bucket_idx][pos] = update_dest;
+        }
+    }
+    
+    // ... 其他代码 ...
+}
+
 int main(int args, char **argv)
 {
 	string path = argv[2], data_name = argv[3];
@@ -236,6 +268,10 @@ int main(int args, char **argv)
 	Barrier global_barrier(BLKS_NUM);
 	mapper compute_mapper(ggraph, mdata, vert_behave_push_h, vert_behave_pull_h, width);
 	reducer worklist_gather(ggraph, mdata, vert_selector_push_h, vert_selector_pull_h, vert_selector_push_h_best, width);
+
+	// 初始化桶
+	mdata.init_buckets(ginst->vert_count, width);
+	
 	for (int ii = task_start_num; ii <= task_end_num; ii++)
 	{
 		string task = "";
@@ -408,7 +444,37 @@ int main(int args, char **argv)
 		double time = wtime();
 		// mapper_hybrid_push_merge(blk_size, level, ggraph, mdata, compute_mapper, worklist_gather, global_barrier, 0);
 
-		balanced_push(blk_size, level, ggraph, mdata, compute_mapper, worklist_gather, global_barrier);
+		// 处理工作队列
+		int total_processed = 0;
+		while (true) {
+			// 从桶中收集工作队列
+			collect_from_buckets<<<(target_size + 255) / 256, 256>>>(
+				mdata.worklist_mid,
+				mdata,
+				target_size);
+			
+			// 处理工作队列
+			mapper_push(...);
+			
+			// 更新桶的范围
+			update_bucket_ranges<<<1, mdata.NUM_BUCKETS>>>(
+				mdata,
+				level,
+				total_processed);
+			
+			// 将新生成的顶点分配到桶中
+			distribute_to_buckets<<<(work_size + 255) / 256, 256>>>(
+				mdata.worklist_mid,
+				work_size,
+				mdata.vert_status,
+				mdata);
+			
+			total_processed += work_size;
+			
+			// 检查是否完成
+			if (work_size == 0) break;
+		}
+		
 		double ftime = wtime() - time; // 一阶段推的耗时
 		cudaMemcpy(level_h, level, 10 * sizeof(feature_t), cudaMemcpyDeviceToHost);
 		//std::cout << "iteration: " << level_h[0] << " queue size " << level_h[1] << " future work " << level_h[2] << "overflow " << level_h[3]<<" used "<<level_h[5] << "\n";

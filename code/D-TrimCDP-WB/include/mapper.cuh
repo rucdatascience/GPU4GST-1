@@ -14,8 +14,7 @@ typedef feature_t (*cb_mapper)(vertex_t active_edge_src,
 							   feature_t *vert_status,
 							   feature_t *vert_status_prev);
 
-// Bitmap could also be helpful
-/* mapper kernel function */
+
 class mapper
 {
 public:
@@ -139,8 +138,7 @@ public:
 			}
 		}
 
-		// note, we use cat_thd_count to store the future amount of workload
-		// and such data is important for switching between push - pull models.
+
 		cat_thd_count[threadIdx.x + blockIdx.x * blockDim.x] = appr_work;
 	}
 

@@ -33,7 +33,7 @@ thread_stride_gather(
 }
 
 
-/* Scan status array to generate *sorted* frontier queue   不是严格有序而是分成大中小三段*/
+/* Scan status array to generate *sorted* frontier queue   */
 __global__ void 
 gen_push_worklist(
 		feature_t level,

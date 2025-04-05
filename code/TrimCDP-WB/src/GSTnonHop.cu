@@ -192,7 +192,6 @@ int main(int args, char **argv)
 
 	meta_data mdata(ginst->vert_count, ginst->edge_count, width);
 	std::vector<int> contain_group_vertices, costs(100);
-	std::vector<double> times(100);
 	int *host_tree = new int[width * V], *inqueue = new int[problem_size];int *one_label_h = new int[width * V];
 	int w[G * G * width], w1[G * width], vv[G][G];
 	std::fill(inqueue, inqueue + problem_size, 0);
@@ -282,7 +281,7 @@ int main(int args, char **argv)
 		std::fill(host_tree, host_tree + problem_size, inf);
 		cudaMemcpy(mdata.vert_status_prev, host_tree, problem_size * sizeof(int), cudaMemcpyHostToDevice);
 		
-	std::fill(inqueue, inqueue + problem_size, 0);
+		std::fill(inqueue, inqueue + problem_size, 0);
 		set_max_ID(ginst->group_graph, ginst->inquire[ii], host_tree, contain_group_vertices, width); // 在置初值前传递参数到prev
 		for (auto it = contain_group_vertices.begin(); it != contain_group_vertices.end(); it++)
 		{

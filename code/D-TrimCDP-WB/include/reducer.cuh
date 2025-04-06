@@ -163,10 +163,7 @@ public:
 		// Warp Stride
 		for (int i = 0; i < 32; i++)
 		{
-			// Comm has problem.
-			// if(__all(my_front_count * (i==WOFF)) == 0) continue;
-			//
-			// Quickly decide whether need to proceed on this thread
+
 			warp_front_count = my_front_count;
 			warp_front_count = __shfl_sync(0xffffffff, warp_front_count, i);
 			if (warp_front_count == 0)
